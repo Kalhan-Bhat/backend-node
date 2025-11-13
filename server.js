@@ -21,17 +21,24 @@ const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const app = express();
 const server = http.createServer(app);
 
-// Configure Socket.IO with CORS
+// Correct CORS configuration for Express
+app.use(cors({
+  origin: 'https://frontend-beige-one-81.vercel.app',
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
+
+// Correct CORS configuration for Socket.IO
 const io = socketIO(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'https://frontend-beige-one-81.vercel.app',
-    methods: ['GET', 'POST']
+    origin: 'https://frontend-beige-one-81.vercel.app',
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
 // Middleware
-app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Increased limit for base64 images
+app.use(express.json({ limit: '50mb' })); 
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Configuration from environment variables
@@ -39,7 +46,7 @@ const CONFIG = {
   AGORA_APP_ID: process.env.AGORA_APP_ID,
   AGORA_APP_CERTIFICATE: process.env.AGORA_APP_CERTIFICATE,
   PORT: process.env.PORT || 3000,
-  ML_SERVICE_URL: process.env.ML_SERVICE_URL || 'http://localhost:8000'
+  ML_SERVICE_URL: process.env.ML_SERVICE_URL || ' https://perfunctorily-irriguous-erin.ngrok-free.dev '
 };
 
 // In-memory storage for active sessions
