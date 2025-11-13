@@ -23,7 +23,7 @@ const server = http.createServer(app);
 
 // Correct CORS configuration for Express
 app.use(cors({
-  origin: 'https://frontend-beige-one-81.vercel.app',
+  origin: ['https://frontend-beige-one-81.vercel.app','https://frontend-beige-one-81.vercel.app/student','https://frontend-beige-one-81.vercel.app/teacher'],
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -31,7 +31,7 @@ app.use(cors({
 // Correct CORS configuration for Socket.IO
 const io = socketIO(server, {
   cors: {
-    origin: 'https://frontend-beige-one-81.vercel.app',
+    origin: ['https://frontend-beige-one-81.vercel.app','https://frontend-beige-one-81.vercel.app/student','https://frontend-beige-one-81.vercel.app/teacher'],
     methods: ['GET', 'POST'],
     credentials: true
   }
