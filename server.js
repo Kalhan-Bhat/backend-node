@@ -24,7 +24,7 @@ const server = http.createServer(app);
 // Configure Socket.IO with CORS
 const io = socketIO(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: process.env.FRONTEND_URL || 'https://frontend-beige-one-81.vercel.app',
     methods: ['GET', 'POST']
   }
 });
