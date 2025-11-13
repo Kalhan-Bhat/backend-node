@@ -21,24 +21,68 @@ const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const app = express();
 const server = http.createServer(app);
 
-// Correct CORS configuration for Express
-app.use(cors({
-  origin: ['https://frontend-beige-one-81.vercel.app','https://frontend-beige-one-81.vercel.app/student','https://frontend-beige-one-81.vercel.app/teacher'],
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
+// Configure allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://frontend-beige-one-81.vercel.app',
+  process.env.FRONTEND_URL,
+  /https:\/\/.*\.vercel\.app$/  // Allow all Vercel preview and production URLs
+].filter(Boolean);
 
-// Correct CORS configuration for Socket.IO
+// Configure Socket.IO with CORS
 const io = socketIO(server, {
   cors: {
-    origin: ['https://frontend-beige-one-81.vercel.app','https://frontend-beige-one-81.vercel.app/student','https://frontend-beige-one-81.vercel.app/teacher'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin matches any allowed pattern
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (typeof allowed === 'string') {
+          return origin === allowed || origin === allowed + '/';
+        }
+        if (allowed instanceof RegExp) {
+          return allowed.test(origin);
+        }
+        return false;
+      });
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }
 });
 
 // Middleware
-app.use(express.json({ limit: '50mb' })); 
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return origin === allowed || origin === allowed + '/';
+      }
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+app.use(express.json({ limit: '50mb' })); // Increased limit for base64 images
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Configuration from environment variables
@@ -46,7 +90,7 @@ const CONFIG = {
   AGORA_APP_ID: process.env.AGORA_APP_ID,
   AGORA_APP_CERTIFICATE: process.env.AGORA_APP_CERTIFICATE,
   PORT: process.env.PORT || 3000,
-  ML_SERVICE_URL: process.env.ML_SERVICE_URL || ' https://perfunctorily-irriguous-erin.ngrok-free.dev '
+  ML_SERVICE_URL: process.env.ML_SERVICE_URL || 'http://localhost:8000'
 };
 
 // In-memory storage for active sessions
