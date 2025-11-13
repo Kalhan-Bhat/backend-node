@@ -721,13 +721,15 @@ app.get('/', (req, res) => {
 // START SERVER
 // =====================================
 
-server.listen(CONFIG.PORT, () => {
+const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+
+server.listen(CONFIG.PORT, HOST, () => {
   console.log('');
   console.log('🚀 ========================================');
   console.log('🚀 Student Engagement Portal - Backend');
   console.log('🚀 ========================================');
-  console.log(`🌐 HTTP Server: http://localhost:${CONFIG.PORT}`);
-  console.log(`🔌 WebSocket Server: ws://localhost:${CONFIG.PORT}`);
+  console.log(`🌐 HTTP Server: http://${HOST}:${CONFIG.PORT}`);
+  console.log(`🔌 WebSocket Server: ws://${HOST}:${CONFIG.PORT}`);
   console.log(`🤖 ML Service: ${CONFIG.ML_SERVICE_URL}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('🚀 ========================================');
