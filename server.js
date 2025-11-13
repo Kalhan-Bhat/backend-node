@@ -121,15 +121,17 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const CONFIG = {
   AGORA_APP_ID: process.env.AGORA_APP_ID,
   AGORA_APP_CERTIFICATE: process.env.AGORA_APP_CERTIFICATE,
-  PORT: parseInt(process.env.PORT) || 3000, // Parse as integer
+  PORT: parseInt(process.env.PORT, 10) || 3000, // Parse as integer with radix
   ML_SERVICE_URL: process.env.ML_SERVICE_URL || 'http://localhost:8000'
 };
 
 // Log startup configuration
 console.log('🔧 Starting with configuration:');
-console.log('  - PORT:', CONFIG.PORT);
+console.log('  - PORT:', CONFIG.PORT, '(type:', typeof CONFIG.PORT, ')');
+console.log('  - process.env.PORT:', process.env.PORT);
 console.log('  - NODE_ENV:', process.env.NODE_ENV || 'development');
 console.log('  - ML_SERVICE_URL:', CONFIG.ML_SERVICE_URL);
+console.log('  - Available env vars:', Object.keys(process.env).filter(k => k.includes('PORT')).join(', '));
 
 // In-memory storage for active sessions
 // In production, use Redis or a database
