@@ -206,14 +206,16 @@ function calculateEngagementFromHistory(studentId) {
   
   recentFrames.forEach(frame => {
     // Normalize emotion to lowercase and use neutral as fallback
-    const emotionKey = (frame.emotion || 'neutral').toLowerCase();
-    const weights = emotionWeights[emotionKey] || emotionWeights.neutral;
+    const emotionKey = (frame.emotion || 'neutral').toLowerCase().trim();
+    const weights = emotionWeights[emotionKey] || emotionWeights.neutral || {
+      engaged: 0.5, bored: 0.2, confused: 0, notPaying: 0.3
+    };
     const confidenceFactor = frame.confidence || 0.5; // Weight by ML model confidence
     
-    scores.engaged += weights.engaged * confidenceFactor;
-    scores.bored += weights.bored * confidenceFactor;
-    scores.confused += weights.confused * confidenceFactor;
-    scores.notPaying += weights.notPaying * confidenceFactor;
+    scores.engaged += (weights.engaged || 0) * confidenceFactor;
+    scores.bored += (weights.bored || 0) * confidenceFactor;
+    scores.confused += (weights.confused || 0) * confidenceFactor;
+    scores.notPaying += (weights.notPaying || 0) * confidenceFactor;
     
     totalConfidence += confidenceFactor;
   });
@@ -672,11 +674,19 @@ io.on('connection', (socket) => {
       );
 
       console.log(`✅ ML service responded successfully`);
+      console.log(`🔍 ML Response data:`, JSON.stringify(mlResponse.data));
 
       const { emotion, confidence } = mlResponse.data;
       
       // Normalize emotion to lowercase for consistent mapping
-      const normalizedEmotion = (emotion || 'neutral').toLowerCase();
+      const normalizedEmotion = (emotion || 'neutral').toLowerCase().trim();
+      
+      console.log(`🔍 Normalized emotion: "${normalizedEmotion}" | Available emotions:`, Object.keys(emotionWeights));
+      
+      // Verify emotion exists in weights, fallback to neutral if not
+      if (!emotionWeights[normalizedEmotion]) {
+        console.log(`⚠️ Unknown emotion "${normalizedEmotion}", falling back to neutral`);
+      }
       
       // Add emotion to history buffer
       const dataPoints = addEmotionToHistory(studentId, normalizedEmotion, confidence || 0.5);
