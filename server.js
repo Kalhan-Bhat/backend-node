@@ -205,8 +205,10 @@ function calculateEngagementFromHistory(studentId) {
   let totalConfidence = 0;
   
   recentFrames.forEach(frame => {
-    const weights = emotionWeights[frame.emotion] || emotionWeights.neutral;
-    const confidenceFactor = frame.confidence; // Weight by ML model confidence
+    // Normalize emotion to lowercase and use neutral as fallback
+    const emotionKey = (frame.emotion || 'neutral').toLowerCase();
+    const weights = emotionWeights[emotionKey] || emotionWeights.neutral;
+    const confidenceFactor = frame.confidence || 0.5; // Weight by ML model confidence
     
     scores.engaged += weights.engaged * confidenceFactor;
     scores.bored += weights.bored * confidenceFactor;
@@ -673,19 +675,22 @@ io.on('connection', (socket) => {
 
       const { emotion, confidence } = mlResponse.data;
       
+      // Normalize emotion to lowercase for consistent mapping
+      const normalizedEmotion = (emotion || 'neutral').toLowerCase();
+      
       // Add emotion to history buffer
-      const dataPoints = addEmotionToHistory(studentId, emotion, confidence);
+      const dataPoints = addEmotionToHistory(studentId, normalizedEmotion, confidence || 0.5);
       
       // Calculate engagement using weighted temporal analysis
       const result = calculateEngagementFromHistory(studentId);
       const { engagement, confidence: avgConfidence, scores } = result;
 
-      console.log(`🎭 ${studentName}: ${emotion} (${(confidence * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, scores: E:${scores.engaged.toFixed(2)} B:${scores.bored.toFixed(2)} C:${scores.confused.toFixed(2)} N:${scores.notPaying.toFixed(2)}]`);
+      console.log(`🎭 ${studentName}: ${normalizedEmotion} (${((confidence || 0.5) * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, scores: E:${scores.engaged.toFixed(2)} B:${scores.bored.toFixed(2)} C:${scores.confused.toFixed(2)} N:${scores.notPaying.toFixed(2)}]`);
 
       // Update student's emotion in active sessions
       if (activeSessions.students.has(studentId)) {
         const existingStudent = activeSessions.students.get(studentId);
-        existingStudent.emotion = emotion;
+        existingStudent.emotion = normalizedEmotion;
         existingStudent.engagement = engagement;
         existingStudent.confidence = avgConfidence;
         existingStudent.timestamp = Date.now();
@@ -700,7 +705,7 @@ io.on('connection', (socket) => {
         timestamp: Date.now(),
         studentId,
         studentName,
-        emotion,
+        emotion: normalizedEmotion,
         engagement,
         confidence: avgConfidence,
         dataPoints
@@ -708,7 +713,7 @@ io.on('connection', (socket) => {
 
       // Send engagement state back to student
       socket.emit('emotion:result', {
-        emotion,
+        emotion: normalizedEmotion,
         engagement,
         confidence: avgConfidence,
         dataPoints,
@@ -720,7 +725,7 @@ io.on('connection', (socket) => {
       io.to(`teachers:${channelName}`).emit('emotion:update', {
         studentId,
         studentName,
-        emotion,
+        emotion: normalizedEmotion,
         engagement,
         confidence: avgConfidence,
         dataPoints,
