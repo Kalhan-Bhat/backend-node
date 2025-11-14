@@ -146,27 +146,49 @@ const analyticsData = new Map();
 // Topic tracking: channelName -> [{ topicName, startTime, endTime }]
 const topicTracking = new Map();
 
-// Weighted Emotion to Engagement Scoring System
-// Each emotion contributes to multiple engagement states with different weights
+// Enhanced Emotion to Engagement Scoring System
+// Based on educational psychology research and cognitive engagement patterns
+// Higher weights = stronger correlation with that engagement state
 const emotionWeights = {
-  happy:     { engaged: 1.0,  bored: 0.0,  confused: 0.0,  notPaying: 0.0 },
-  neutral:   { engaged: 0.5,  bored: 0.2,  confused: 0.0,  notPaying: 0.3 },
-  surprised: { engaged: 1.0,  bored: 0.0,  confused: 0.5,  notPaying: 0.0 },
-  sad:       { engaged: 0.0,  bored: 1.0,  confused: 0.0,  notPaying: 0.2 },
-  angry:     { engaged: 0.0,  bored: 0.3,  confused: 1.0,  notPaying: 0.2 },
-  disgusted: { engaged: 0.0,  bored: 1.0,  confused: 0.2,  notPaying: 0.3 },
-  fearful:   { engaged: 0.0,  bored: 0.0,  confused: 1.0,  notPaying: 0.3 }
+  // Happy: Strong positive engagement, actively participating
+  happy:     { engaged: 0.95, bored: 0.0,  confused: 0.0,  notPaying: 0.05 },
+  
+  // Neutral: Ambiguous - could be focused or disengaged
+  // Slight bias toward engagement if sustained, but watch for drift
+  neutral:   { engaged: 0.60, bored: 0.15, confused: 0.05, notPaying: 0.20 },
+  
+  // Surprised: Indicates attention capture - highly engaged but may need clarification
+  surprised: { engaged: 0.85, bored: 0.0,  confused: 0.10, notPaying: 0.05 },
+  
+  // Sad: Typically indicates disengagement or personal distraction
+  sad:       { engaged: 0.10, bored: 0.70, confused: 0.10, notPaying: 0.10 },
+  
+  // Angry: Can indicate frustration with difficult material (confused) or boredom
+  angry:     { engaged: 0.15, bored: 0.25, confused: 0.50, notPaying: 0.10 },
+  
+  // Disgusted: Strong disengagement signal
+  disgusted: { engaged: 0.05, bored: 0.75, confused: 0.05, notPaying: 0.15 },
+  
+  // Fearful: Usually indicates confusion or anxiety about material
+  fearful:   { engaged: 0.20, bored: 0.05, confused: 0.60, notPaying: 0.15 }
 };
 
-// Store recent emotion history for temporal smoothing (2-3 second window)
-// studentId -> [{ emotion, confidence, timestamp }]
+// Store recent emotion history for temporal smoothing
+// Optimized for faster response while maintaining accuracy
+// studentId -> [{ emotion, confidence, timestamp, weight }]
 const emotionHistory = new Map();
-const HISTORY_WINDOW_MS = 2500; // 2.5 seconds
-const MIN_FRAMES_FOR_DECISION = 3; // Minimum frames before deciding
+const HISTORY_WINDOW_MS = 1500; // 1.5 seconds - faster response time
+const MIN_FRAMES_FOR_DECISION = 2; // Minimum 2 frames for quicker initial assessment
+const CONFIDENCE_THRESHOLD = 0.35; // Only consider frames above this confidence
+const DECAY_FACTOR = 0.85; // Exponential decay for older frames (newer = more important)
 
 /**
- * Calculate engagement state using weighted scoring over time window
- * This reduces flickering and provides more accurate assessment
+ * Calculate engagement state using exponential moving average with confidence weighting
+ * This approach:
+ * 1. Gives more weight to recent frames (exponential decay)
+ * 2. Filters out low-confidence predictions
+ * 3. Uses weighted scoring for nuanced engagement assessment
+ * 4. Responds faster while maintaining stability
  */
 function calculateEngagementFromHistory(studentId) {
   const history = emotionHistory.get(studentId) || [];
@@ -181,22 +203,25 @@ function calculateEngagementFromHistory(studentId) {
     };
   }
   
-  // Filter to recent window only
+  // Filter to recent window and above confidence threshold
   const now = Date.now();
   const recentFrames = history.filter(
-    frame => (now - frame.timestamp) <= HISTORY_WINDOW_MS
+    frame => (now - frame.timestamp) <= HISTORY_WINDOW_MS && 
+             (frame.confidence >= CONFIDENCE_THRESHOLD)
   );
   
   if (recentFrames.length === 0) {
+    // No high-confidence frames, return cautious neutral state
     return {
       engagement: 'Not Paying Attention',
-      confidence: 0.5,
+      confidence: 0.4,
       dataPoints: 0,
       scores: { engaged: 0, bored: 0, confused: 0, notPaying: 0 }
     };
   }
   
-  // Accumulate weighted scores across all frames
+  // Calculate exponentially weighted moving average
+  // More recent frames have higher weight
   const scores = {
     engaged: 0,
     bored: 0,
@@ -204,34 +229,55 @@ function calculateEngagementFromHistory(studentId) {
     notPaying: 0
   };
   
+  let totalWeight = 0;
   let totalConfidence = 0;
   
-  recentFrames.forEach(frame => {
+  // Sort frames by timestamp (oldest to newest)
+  const sortedFrames = [...recentFrames].sort((a, b) => a.timestamp - b.timestamp);
+  
+  sortedFrames.forEach((frame, index) => {
     // Normalize emotion to lowercase and use neutral as fallback
     const emotionKey = (frame.emotion || 'neutral').toLowerCase().trim();
     const weights = emotionWeights[emotionKey] || emotionWeights.neutral || {
-      engaged: 0.5, bored: 0.2, confused: 0, notPaying: 0.3
+      engaged: 0.60, bored: 0.15, confused: 0.05, notPaying: 0.20
     };
-    const confidenceFactor = frame.confidence || 0.5; // Weight by ML model confidence
     
-    scores.engaged += (weights.engaged || 0) * confidenceFactor;
-    scores.bored += (weights.bored || 0) * confidenceFactor;
-    scores.confused += (weights.confused || 0) * confidenceFactor;
-    scores.notPaying += (weights.notPaying || 0) * confidenceFactor;
+    // Calculate time-based decay weight (newer = higher weight)
+    const frameAge = now - frame.timestamp;
+    const timeDecay = Math.pow(DECAY_FACTOR, frameAge / 500); // Decay every 500ms
     
-    totalConfidence += confidenceFactor;
+    // Combine confidence and time decay for final weight
+    const frameWeight = (frame.confidence || 0.5) * timeDecay;
+    
+    // Accumulate weighted scores
+    scores.engaged += (weights.engaged || 0) * frameWeight;
+    scores.bored += (weights.bored || 0) * frameWeight;
+    scores.confused += (weights.confused || 0) * frameWeight;
+    scores.notPaying += (weights.notPaying || 0) * frameWeight;
+    
+    totalWeight += frameWeight;
+    totalConfidence += frame.confidence || 0.5;
   });
   
-  // Normalize scores by total confidence
-  const avgConfidence = totalConfidence / recentFrames.length;
-  Object.keys(scores).forEach(key => {
-    scores[key] = scores[key] / recentFrames.length;
-  });
+  // Normalize scores by total weight
+  const avgConfidence = totalConfidence / sortedFrames.length;
+  if (totalWeight > 0) {
+    Object.keys(scores).forEach(key => {
+      scores[key] = scores[key] / totalWeight;
+    });
+  }
   
-  // Find dominant engagement state
-  const engagement = Object.keys(scores).reduce((a, b) => 
-    scores[a] > scores[b] ? a : b
-  );
+  // Find dominant engagement state with minimum threshold
+  // Require at least 0.3 score to be considered dominant
+  const MIN_DOMINANCE = 0.3;
+  const maxScore = Math.max(scores.engaged, scores.bored, scores.confused, scores.notPaying);
+  
+  let engagement = 'notPaying'; // default
+  if (maxScore >= MIN_DOMINANCE) {
+    engagement = Object.keys(scores).reduce((a, b) => 
+      scores[a] > scores[b] ? a : b
+    );
+  }
   
   // Map internal keys to display names
   const engagementMap = {
