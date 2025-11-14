@@ -683,11 +683,11 @@ io.on('connection', (socket) => {
       // Normalize emotion to lowercase for consistent mapping
       const normalizedEmotion = (emotion || 'neutral').toLowerCase().trim();
       
-      console.log(`🔍 Normalized emotion: "${normalizedEmotion}" | Available emotions:`, Object.keys(emotionWeights));
+      console.log(`🔍 Normalized emotion: "${normalizedEmotion}" | Available emotions:`, Object.keys(emotionToEngagement));
       
-      // Verify emotion exists in weights, fallback to neutral if not
-      if (!emotionWeights[normalizedEmotion]) {
-        console.log(`⚠️ Unknown emotion "${normalizedEmotion}", falling back to neutral`);
+      // Verify emotion exists in mapping, fallback to Engaged for unknown emotions
+      if (!emotionToEngagement[normalizedEmotion]) {
+        console.log(`⚠️ Unknown emotion "${normalizedEmotion}", defaulting to Engaged`);
       }
       
       // Add emotion to history buffer
