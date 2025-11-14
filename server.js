@@ -146,131 +146,19 @@ const analyticsData = new Map();
 // Topic tracking: channelName -> [{ topicName, startTime, endTime }]
 const topicTracking = new Map();
 
-// Simplified Binary Engagement System
-// Simple and accurate: emotions directly map to Engaged or Not Engaged
+// Emotion to Engagement State Mapping
 const emotionToEngagement = {
-  // ENGAGED GROUP: Positive emotions indicating attention and participation
-  'happy':     'Engaged',      // Active, positive participation
-  'surprised': 'Engaged',      // Attention captured, alert
-  'neutral':   'Engaged',      // Focused, attentive (benefit of doubt)
-  
-  // NOT ENGAGED GROUP: Negative emotions indicating disengagement
-  'sad':       'Not Engaged',  // Withdrawn, distracted
-  'angry':     'Not Engaged',  // Frustrated, disengaged
-  'disgusted': 'Not Engaged',  // Strong disengagement
-  'fearful':   'Not Engaged'   // Anxious, not focused on content
+  'happy': 'Engaged',
+  'neutral': 'Not Paying Attention',
+  'sad': 'Bored',
+  'angry': 'Confused',
+  'surprised': 'Engaged',
+  'fearful': 'Confused',
+  'disgusted': 'Bored'
 };
 
-// Store recent emotion history for temporal smoothing
-// Binary engagement system with majority voting
-// studentId -> [{ emotion, confidence, timestamp }]
-const emotionHistory = new Map();
-const HISTORY_WINDOW_MS = 2000; // 2 seconds window for stable decisions
-const MIN_FRAMES_FOR_DECISION = 3; // Need 3 frames for majority voting
-const CONFIDENCE_THRESHOLD = 0.30; // Lower threshold to capture more frames
-const ENGAGEMENT_THRESHOLD = 0.60; // 60% of frames must agree for final state
-
-/**
- * Calculate engagement using simple majority voting
- * Much more accurate and stable than complex weighted systems
- * 
- * Logic:
- * 1. Collect recent frames (2 second window)
- * 2. Map each emotion to binary: Engaged or Not Engaged
- * 3. Count votes: if 60%+ say Engaged → Engaged, else → Not Engaged
- * 4. Simple, fast, accurate!
- */
-function calculateEngagementFromHistory(studentId) {
-  const history = emotionHistory.get(studentId) || [];
-  
-  if (history.length < MIN_FRAMES_FOR_DECISION) {
-    // Not enough data yet, assume engaged (benefit of doubt)
-    return {
-      engagement: 'Engaged',
-      confidence: 0.5,
-      dataPoints: history.length
-    };
-  }
-  
-  // Filter to recent window and above confidence threshold
-  const now = Date.now();
-  const recentFrames = history.filter(
-    frame => (now - frame.timestamp) <= HISTORY_WINDOW_MS && 
-             (frame.confidence >= CONFIDENCE_THRESHOLD)
-  );
-  
-  if (recentFrames.length === 0) {
-    // No frames, assume engaged
-    return {
-      engagement: 'Engaged',
-      confidence: 0.4,
-      dataPoints: 0
-    };
-  }
-  
-  // Count engagement votes using simple mapping
-  let engagedCount = 0;
-  let notEngagedCount = 0;
-  let totalConfidence = 0;
-  
-  recentFrames.forEach(frame => {
-    // Normalize emotion to lowercase
-    const emotionKey = (frame.emotion || 'neutral').toLowerCase().trim();
-    
-    // Map emotion to engagement state (default to Engaged for unknown emotions)
-    const engagementState = emotionToEngagement[emotionKey] || 'Engaged';
-    
-    if (engagementState === 'Engaged') {
-      engagedCount++;
-    } else {
-      notEngagedCount++;
-    }
-    
-    totalConfidence += frame.confidence || 0.5;
-  });
-  
-  // Calculate average confidence
-  const avgConfidence = totalConfidence / recentFrames.length;
-  
-  // Calculate engagement percentage
-  const totalVotes = engagedCount + notEngagedCount;
-  const engagedPercentage = engagedCount / totalVotes;
-  
-  // Majority voting: need 60%+ to be considered Engaged
-  const finalEngagement = engagedPercentage >= ENGAGEMENT_THRESHOLD ? 'Engaged' : 'Not Engaged';
-  
-  return {
-    engagement: finalEngagement,
-    confidence: avgConfidence,
-    dataPoints: recentFrames.length,
-    engagedVotes: engagedCount,
-    notEngagedVotes: notEngagedCount,
-    engagedPercentage: Math.round(engagedPercentage * 100)
-  };
-}
-
-/**
- * Add emotion to student's history with automatic cleanup
- */
-function addEmotionToHistory(studentId, emotion, confidence) {
-  if (!emotionHistory.has(studentId)) {
-    emotionHistory.set(studentId, []);
-  }
-  
-  const history = emotionHistory.get(studentId);
-  const now = Date.now();
-  
-  // Add new frame
-  history.push({ emotion, confidence, timestamp: now });
-  
-  // Keep only frames within the time window (auto-cleanup)
-  const filteredHistory = history.filter(
-    frame => (now - frame.timestamp) <= HISTORY_WINDOW_MS
-  );
-  
-  emotionHistory.set(studentId, filteredHistory);
-  
-  return filteredHistory.length;
+function mapEmotionToEngagement(emotion) {
+  return emotionToEngagement[emotion] || 'Not Paying Attention';
 }
 
 // =====================================
@@ -676,40 +564,22 @@ io.on('connection', (socket) => {
       );
 
       console.log(`✅ ML service responded successfully`);
-      console.log(`🔍 ML Response data:`, JSON.stringify(mlResponse.data));
 
       const { emotion, confidence } = mlResponse.data;
-      
-      // Normalize emotion to lowercase for consistent mapping
-      const normalizedEmotion = (emotion || 'neutral').toLowerCase().trim();
-      
-      console.log(`🔍 Normalized emotion: "${normalizedEmotion}" | Available emotions:`, Object.keys(emotionToEngagement));
-      
-      // Verify emotion exists in mapping, fallback to Engaged for unknown emotions
-      if (!emotionToEngagement[normalizedEmotion]) {
-        console.log(`⚠️ Unknown emotion "${normalizedEmotion}", defaulting to Engaged`);
-      }
-      
-      // Add emotion to history buffer
-      const dataPoints = addEmotionToHistory(studentId, normalizedEmotion, confidence || 0.5);
-      
-      // Calculate engagement using simple majority voting
-      const result = calculateEngagementFromHistory(studentId);
-      const { engagement, confidence: avgConfidence } = result;
+      const engagement = mapEmotionToEngagement(emotion);
 
-      console.log(`🎭 ${studentName}: ${normalizedEmotion} (${((confidence || 0.5) * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, ${result.engagedPercentage || 50}% engaged votes]`);
+      console.log(`🎭 Detected emotion for ${studentName}: ${emotion} → ${engagement} (${(confidence * 100).toFixed(1)}%)`);
 
       // Update student's emotion in active sessions
       if (activeSessions.students.has(studentId)) {
         const existingStudent = activeSessions.students.get(studentId);
-        existingStudent.emotion = normalizedEmotion;
+        existingStudent.emotion = emotion;
         existingStudent.engagement = engagement;
-        existingStudent.confidence = avgConfidence;
+        existingStudent.confidence = confidence;
         existingStudent.timestamp = Date.now();
-        existingStudent.dataPoints = dataPoints;
       }
       
-      // Store analytics data (only store final engagement decisions to reduce noise)
+      // Store analytics data
       if (!analyticsData.has(channelName)) {
         analyticsData.set(channelName, []);
       }
@@ -717,33 +587,30 @@ io.on('connection', (socket) => {
         timestamp: Date.now(),
         studentId,
         studentName,
-        emotion: normalizedEmotion,
+        emotion,
         engagement,
-        confidence: avgConfidence,
-        dataPoints
+        confidence
       });
 
       // Send engagement state back to student
       socket.emit('emotion:result', {
-        emotion: normalizedEmotion,
+        emotion,
         engagement,
-        confidence: avgConfidence,
-        dataPoints,
+        confidence,
         timestamp: Date.now()
       });
-      console.log(`📤 Sent engagement result to ${studentName} (${dataPoints} data points)`);
+      console.log(`📤 Sent engagement result to ${studentName}`);
 
       // Broadcast engagement update to teachers in the same channel
       io.to(`teachers:${channelName}`).emit('emotion:update', {
         studentId,
         studentName,
-        emotion: normalizedEmotion,
+        emotion,
         engagement,
-        confidence: avgConfidence,
-        dataPoints,
+        confidence,
         timestamp: Date.now()
       });
-      console.log(`📡 Broadcast to teachers: ${studentName} → ${engagement}`);
+      console.log(`📡 Broadcast emotion update to teachers in channel: ${channelName}`);
 
     } catch (error) {
       console.error('❌ Error processing frame:', error.message);
@@ -772,7 +639,6 @@ io.on('connection', (socket) => {
     const studentName = student ? student.name : `Student ${studentId}`;
     
     activeSessions.students.delete(studentId);
-    emotionHistory.delete(studentId); // Clean up emotion history
     socket.leave(`channel:${channelName}`);
     
     console.log(`👨‍🎓 ${studentName} (ID: ${studentId}) left channel: ${channelName}`);
@@ -811,7 +677,6 @@ io.on('connection', (socket) => {
     for (const [studentId, student] of activeSessions.students.entries()) {
       if (student.socketId === socket.id) {
         activeSessions.students.delete(studentId);
-        emotionHistory.delete(studentId); // Clean up emotion history
         io.to(`teachers:${student.channelName}`).emit('student:left', {
           studentId,
           timestamp: Date.now()
