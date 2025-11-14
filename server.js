@@ -176,7 +176,8 @@ function calculateEngagementFromHistory(studentId) {
     return {
       engagement: 'Not Paying Attention',
       confidence: 0.5,
-      dataPoints: history.length
+      dataPoints: history.length,
+      scores: { engaged: 0, bored: 0, confused: 0, notPaying: 0 }
     };
   }
   
@@ -190,7 +191,8 @@ function calculateEngagementFromHistory(studentId) {
     return {
       engagement: 'Not Paying Attention',
       confidence: 0.5,
-      dataPoints: 0
+      dataPoints: 0,
+      scores: { engaged: 0, bored: 0, confused: 0, notPaying: 0 }
     };
   }
   
@@ -693,7 +695,7 @@ io.on('connection', (socket) => {
       
       // Calculate engagement using weighted temporal analysis
       const result = calculateEngagementFromHistory(studentId);
-      const { engagement, confidence: avgConfidence, scores } = result;
+      const { engagement, confidence: avgConfidence, scores = { engaged: 0, bored: 0, confused: 0, notPaying: 0 } } = result;
 
       console.log(`🎭 ${studentName}: ${normalizedEmotion} (${((confidence || 0.5) * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, scores: E:${scores.engaged.toFixed(2)} B:${scores.bored.toFixed(2)} C:${scores.confused.toFixed(2)} N:${scores.notPaying.toFixed(2)}]`);
 
