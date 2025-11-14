@@ -146,19 +146,125 @@ const analyticsData = new Map();
 // Topic tracking: channelName -> [{ topicName, startTime, endTime }]
 const topicTracking = new Map();
 
-// Emotion to Engagement State Mapping
-const emotionToEngagement = {
-  'happy': 'Engaged',
-  'neutral': 'Not Paying Attention',
-  'sad': 'Bored',
-  'angry': 'Confused',
-  'surprised': 'Engaged',
-  'fearful': 'Confused',
-  'disgusted': 'Bored'
+// Weighted Emotion to Engagement Scoring System
+// Each emotion contributes to multiple engagement states with different weights
+const emotionWeights = {
+  happy:     { engaged: 1.0,  bored: 0.0,  confused: 0.0,  notPaying: 0.0 },
+  neutral:   { engaged: 0.5,  bored: 0.2,  confused: 0.0,  notPaying: 0.3 },
+  surprised: { engaged: 1.0,  bored: 0.0,  confused: 0.5,  notPaying: 0.0 },
+  sad:       { engaged: 0.0,  bored: 1.0,  confused: 0.0,  notPaying: 0.2 },
+  angry:     { engaged: 0.0,  bored: 0.3,  confused: 1.0,  notPaying: 0.2 },
+  disgusted: { engaged: 0.0,  bored: 1.0,  confused: 0.2,  notPaying: 0.3 },
+  fearful:   { engaged: 0.0,  bored: 0.0,  confused: 1.0,  notPaying: 0.3 }
 };
 
-function mapEmotionToEngagement(emotion) {
-  return emotionToEngagement[emotion] || 'Not Paying Attention';
+// Store recent emotion history for temporal smoothing (2-3 second window)
+// studentId -> [{ emotion, confidence, timestamp }]
+const emotionHistory = new Map();
+const HISTORY_WINDOW_MS = 2500; // 2.5 seconds
+const MIN_FRAMES_FOR_DECISION = 3; // Minimum frames before deciding
+
+/**
+ * Calculate engagement state using weighted scoring over time window
+ * This reduces flickering and provides more accurate assessment
+ */
+function calculateEngagementFromHistory(studentId) {
+  const history = emotionHistory.get(studentId) || [];
+  
+  if (history.length < MIN_FRAMES_FOR_DECISION) {
+    // Not enough data yet, return neutral state
+    return {
+      engagement: 'Not Paying Attention',
+      confidence: 0.5,
+      dataPoints: history.length
+    };
+  }
+  
+  // Filter to recent window only
+  const now = Date.now();
+  const recentFrames = history.filter(
+    frame => (now - frame.timestamp) <= HISTORY_WINDOW_MS
+  );
+  
+  if (recentFrames.length === 0) {
+    return {
+      engagement: 'Not Paying Attention',
+      confidence: 0.5,
+      dataPoints: 0
+    };
+  }
+  
+  // Accumulate weighted scores across all frames
+  const scores = {
+    engaged: 0,
+    bored: 0,
+    confused: 0,
+    notPaying: 0
+  };
+  
+  let totalConfidence = 0;
+  
+  recentFrames.forEach(frame => {
+    const weights = emotionWeights[frame.emotion] || emotionWeights.neutral;
+    const confidenceFactor = frame.confidence; // Weight by ML model confidence
+    
+    scores.engaged += weights.engaged * confidenceFactor;
+    scores.bored += weights.bored * confidenceFactor;
+    scores.confused += weights.confused * confidenceFactor;
+    scores.notPaying += weights.notPaying * confidenceFactor;
+    
+    totalConfidence += confidenceFactor;
+  });
+  
+  // Normalize scores by total confidence
+  const avgConfidence = totalConfidence / recentFrames.length;
+  Object.keys(scores).forEach(key => {
+    scores[key] = scores[key] / recentFrames.length;
+  });
+  
+  // Find dominant engagement state
+  const engagement = Object.keys(scores).reduce((a, b) => 
+    scores[a] > scores[b] ? a : b
+  );
+  
+  // Map internal keys to display names
+  const engagementMap = {
+    engaged: 'Engaged',
+    bored: 'Bored',
+    confused: 'Confused',
+    notPaying: 'Not Paying Attention'
+  };
+  
+  return {
+    engagement: engagementMap[engagement],
+    confidence: avgConfidence,
+    dataPoints: recentFrames.length,
+    scores // Include raw scores for debugging
+  };
+}
+
+/**
+ * Add emotion to student's history with automatic cleanup
+ */
+function addEmotionToHistory(studentId, emotion, confidence) {
+  if (!emotionHistory.has(studentId)) {
+    emotionHistory.set(studentId, []);
+  }
+  
+  const history = emotionHistory.get(studentId);
+  const now = Date.now();
+  
+  // Add new frame
+  history.push({ emotion, confidence, timestamp: now });
+  
+  // Keep only frames within the time window (auto-cleanup)
+  const filteredHistory = history.filter(
+    frame => (now - frame.timestamp) <= HISTORY_WINDOW_MS
+  );
+  
+  emotionHistory.set(studentId, filteredHistory);
+  
+  return filteredHistory.length;
 }
 
 // =====================================
@@ -566,20 +672,27 @@ io.on('connection', (socket) => {
       console.log(`✅ ML service responded successfully`);
 
       const { emotion, confidence } = mlResponse.data;
-      const engagement = mapEmotionToEngagement(emotion);
+      
+      // Add emotion to history buffer
+      const dataPoints = addEmotionToHistory(studentId, emotion, confidence);
+      
+      // Calculate engagement using weighted temporal analysis
+      const result = calculateEngagementFromHistory(studentId);
+      const { engagement, confidence: avgConfidence, scores } = result;
 
-      console.log(`🎭 Detected emotion for ${studentName}: ${emotion} → ${engagement} (${(confidence * 100).toFixed(1)}%)`);
+      console.log(`🎭 ${studentName}: ${emotion} (${(confidence * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, scores: E:${scores.engaged.toFixed(2)} B:${scores.bored.toFixed(2)} C:${scores.confused.toFixed(2)} N:${scores.notPaying.toFixed(2)}]`);
 
       // Update student's emotion in active sessions
       if (activeSessions.students.has(studentId)) {
         const existingStudent = activeSessions.students.get(studentId);
         existingStudent.emotion = emotion;
         existingStudent.engagement = engagement;
-        existingStudent.confidence = confidence;
+        existingStudent.confidence = avgConfidence;
         existingStudent.timestamp = Date.now();
+        existingStudent.dataPoints = dataPoints;
       }
       
-      // Store analytics data
+      // Store analytics data (only store final engagement decisions to reduce noise)
       if (!analyticsData.has(channelName)) {
         analyticsData.set(channelName, []);
       }
@@ -589,17 +702,19 @@ io.on('connection', (socket) => {
         studentName,
         emotion,
         engagement,
-        confidence
+        confidence: avgConfidence,
+        dataPoints
       });
 
       // Send engagement state back to student
       socket.emit('emotion:result', {
         emotion,
         engagement,
-        confidence,
+        confidence: avgConfidence,
+        dataPoints,
         timestamp: Date.now()
       });
-      console.log(`📤 Sent engagement result to ${studentName}`);
+      console.log(`📤 Sent engagement result to ${studentName} (${dataPoints} data points)`);
 
       // Broadcast engagement update to teachers in the same channel
       io.to(`teachers:${channelName}`).emit('emotion:update', {
@@ -607,10 +722,11 @@ io.on('connection', (socket) => {
         studentName,
         emotion,
         engagement,
-        confidence,
+        confidence: avgConfidence,
+        dataPoints,
         timestamp: Date.now()
       });
-      console.log(`📡 Broadcast emotion update to teachers in channel: ${channelName}`);
+      console.log(`📡 Broadcast to teachers: ${studentName} → ${engagement}`);
 
     } catch (error) {
       console.error('❌ Error processing frame:', error.message);
@@ -639,6 +755,7 @@ io.on('connection', (socket) => {
     const studentName = student ? student.name : `Student ${studentId}`;
     
     activeSessions.students.delete(studentId);
+    emotionHistory.delete(studentId); // Clean up emotion history
     socket.leave(`channel:${channelName}`);
     
     console.log(`👨‍🎓 ${studentName} (ID: ${studentId}) left channel: ${channelName}`);
@@ -677,6 +794,7 @@ io.on('connection', (socket) => {
     for (const [studentId, student] of activeSessions.students.entries()) {
       if (student.socketId === socket.id) {
         activeSessions.students.delete(studentId);
+        emotionHistory.delete(studentId); // Clean up emotion history
         io.to(`teachers:${student.channelName}`).emit('student:left', {
           studentId,
           timestamp: Date.now()
