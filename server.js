@@ -146,60 +146,49 @@ const analyticsData = new Map();
 // Topic tracking: channelName -> [{ topicName, startTime, endTime }]
 const topicTracking = new Map();
 
-// Enhanced Emotion to Engagement Scoring System
-// Based on educational psychology research and cognitive engagement patterns
-// Higher weights = stronger correlation with that engagement state
-const emotionWeights = {
-  // Happy: Strong positive engagement, actively participating
-  happy:     { engaged: 0.95, bored: 0.0,  confused: 0.0,  notPaying: 0.05 },
+// Simplified Binary Engagement System
+// Simple and accurate: emotions directly map to Engaged or Not Engaged
+const emotionToEngagement = {
+  // ENGAGED GROUP: Positive emotions indicating attention and participation
+  'happy':     'Engaged',      // Active, positive participation
+  'surprised': 'Engaged',      // Attention captured, alert
+  'neutral':   'Engaged',      // Focused, attentive (benefit of doubt)
   
-  // Neutral: Ambiguous - could be focused or disengaged
-  // Slight bias toward engagement if sustained, but watch for drift
-  neutral:   { engaged: 0.60, bored: 0.15, confused: 0.05, notPaying: 0.20 },
-  
-  // Surprised: Indicates attention capture - highly engaged but may need clarification
-  surprised: { engaged: 0.85, bored: 0.0,  confused: 0.10, notPaying: 0.05 },
-  
-  // Sad: Typically indicates disengagement or personal distraction
-  sad:       { engaged: 0.10, bored: 0.70, confused: 0.10, notPaying: 0.10 },
-  
-  // Angry: Can indicate frustration with difficult material (confused) or boredom
-  angry:     { engaged: 0.15, bored: 0.25, confused: 0.50, notPaying: 0.10 },
-  
-  // Disgusted: Strong disengagement signal
-  disgusted: { engaged: 0.05, bored: 0.75, confused: 0.05, notPaying: 0.15 },
-  
-  // Fearful: Usually indicates confusion or anxiety about material
-  fearful:   { engaged: 0.20, bored: 0.05, confused: 0.60, notPaying: 0.15 }
+  // NOT ENGAGED GROUP: Negative emotions indicating disengagement
+  'sad':       'Not Engaged',  // Withdrawn, distracted
+  'angry':     'Not Engaged',  // Frustrated, disengaged
+  'disgusted': 'Not Engaged',  // Strong disengagement
+  'fearful':   'Not Engaged'   // Anxious, not focused on content
 };
 
 // Store recent emotion history for temporal smoothing
-// Optimized for faster response while maintaining accuracy
-// studentId -> [{ emotion, confidence, timestamp, weight }]
+// Binary engagement system with majority voting
+// studentId -> [{ emotion, confidence, timestamp }]
 const emotionHistory = new Map();
-const HISTORY_WINDOW_MS = 1500; // 1.5 seconds - faster response time
-const MIN_FRAMES_FOR_DECISION = 2; // Minimum 2 frames for quicker initial assessment
-const CONFIDENCE_THRESHOLD = 0.35; // Only consider frames above this confidence
-const DECAY_FACTOR = 0.85; // Exponential decay for older frames (newer = more important)
+const HISTORY_WINDOW_MS = 2000; // 2 seconds window for stable decisions
+const MIN_FRAMES_FOR_DECISION = 3; // Need 3 frames for majority voting
+const CONFIDENCE_THRESHOLD = 0.30; // Lower threshold to capture more frames
+const ENGAGEMENT_THRESHOLD = 0.60; // 60% of frames must agree for final state
 
 /**
- * Calculate engagement state using exponential moving average with confidence weighting
- * This approach:
- * 1. Gives more weight to recent frames (exponential decay)
- * 2. Filters out low-confidence predictions
- * 3. Uses weighted scoring for nuanced engagement assessment
- * 4. Responds faster while maintaining stability
+ * Calculate engagement using simple majority voting
+ * Much more accurate and stable than complex weighted systems
+ * 
+ * Logic:
+ * 1. Collect recent frames (2 second window)
+ * 2. Map each emotion to binary: Engaged or Not Engaged
+ * 3. Count votes: if 60%+ say Engaged → Engaged, else → Not Engaged
+ * 4. Simple, fast, accurate!
  */
 function calculateEngagementFromHistory(studentId) {
   const history = emotionHistory.get(studentId) || [];
   
   if (history.length < MIN_FRAMES_FOR_DECISION) {
-    // Not enough data yet, return neutral state
+    // Not enough data yet, assume engaged (benefit of doubt)
     return {
-      engagement: 'Not Paying Attention',
+      engagement: 'Engaged',
       confidence: 0.5,
-      dataPoints: history.length,
-      scores: { engaged: 0, bored: 0, confused: 0, notPaying: 0 }
+      dataPoints: history.length
     };
   }
   
@@ -211,87 +200,52 @@ function calculateEngagementFromHistory(studentId) {
   );
   
   if (recentFrames.length === 0) {
-    // No high-confidence frames, return cautious neutral state
+    // No frames, assume engaged
     return {
-      engagement: 'Not Paying Attention',
+      engagement: 'Engaged',
       confidence: 0.4,
-      dataPoints: 0,
-      scores: { engaged: 0, bored: 0, confused: 0, notPaying: 0 }
+      dataPoints: 0
     };
   }
   
-  // Calculate exponentially weighted moving average
-  // More recent frames have higher weight
-  const scores = {
-    engaged: 0,
-    bored: 0,
-    confused: 0,
-    notPaying: 0
-  };
-  
-  let totalWeight = 0;
+  // Count engagement votes using simple mapping
+  let engagedCount = 0;
+  let notEngagedCount = 0;
   let totalConfidence = 0;
   
-  // Sort frames by timestamp (oldest to newest)
-  const sortedFrames = [...recentFrames].sort((a, b) => a.timestamp - b.timestamp);
-  
-  sortedFrames.forEach((frame, index) => {
-    // Normalize emotion to lowercase and use neutral as fallback
+  recentFrames.forEach(frame => {
+    // Normalize emotion to lowercase
     const emotionKey = (frame.emotion || 'neutral').toLowerCase().trim();
-    const weights = emotionWeights[emotionKey] || emotionWeights.neutral || {
-      engaged: 0.60, bored: 0.15, confused: 0.05, notPaying: 0.20
-    };
     
-    // Calculate time-based decay weight (newer = higher weight)
-    const frameAge = now - frame.timestamp;
-    const timeDecay = Math.pow(DECAY_FACTOR, frameAge / 500); // Decay every 500ms
+    // Map emotion to engagement state (default to Engaged for unknown emotions)
+    const engagementState = emotionToEngagement[emotionKey] || 'Engaged';
     
-    // Combine confidence and time decay for final weight
-    const frameWeight = (frame.confidence || 0.5) * timeDecay;
+    if (engagementState === 'Engaged') {
+      engagedCount++;
+    } else {
+      notEngagedCount++;
+    }
     
-    // Accumulate weighted scores
-    scores.engaged += (weights.engaged || 0) * frameWeight;
-    scores.bored += (weights.bored || 0) * frameWeight;
-    scores.confused += (weights.confused || 0) * frameWeight;
-    scores.notPaying += (weights.notPaying || 0) * frameWeight;
-    
-    totalWeight += frameWeight;
     totalConfidence += frame.confidence || 0.5;
   });
   
-  // Normalize scores by total weight
-  const avgConfidence = totalConfidence / sortedFrames.length;
-  if (totalWeight > 0) {
-    Object.keys(scores).forEach(key => {
-      scores[key] = scores[key] / totalWeight;
-    });
-  }
+  // Calculate average confidence
+  const avgConfidence = totalConfidence / recentFrames.length;
   
-  // Find dominant engagement state with minimum threshold
-  // Require at least 0.3 score to be considered dominant
-  const MIN_DOMINANCE = 0.3;
-  const maxScore = Math.max(scores.engaged, scores.bored, scores.confused, scores.notPaying);
+  // Calculate engagement percentage
+  const totalVotes = engagedCount + notEngagedCount;
+  const engagedPercentage = engagedCount / totalVotes;
   
-  let engagement = 'notPaying'; // default
-  if (maxScore >= MIN_DOMINANCE) {
-    engagement = Object.keys(scores).reduce((a, b) => 
-      scores[a] > scores[b] ? a : b
-    );
-  }
-  
-  // Map internal keys to display names
-  const engagementMap = {
-    engaged: 'Engaged',
-    bored: 'Bored',
-    confused: 'Confused',
-    notPaying: 'Not Paying Attention'
-  };
+  // Majority voting: need 60%+ to be considered Engaged
+  const finalEngagement = engagedPercentage >= ENGAGEMENT_THRESHOLD ? 'Engaged' : 'Not Engaged';
   
   return {
-    engagement: engagementMap[engagement],
+    engagement: finalEngagement,
     confidence: avgConfidence,
     dataPoints: recentFrames.length,
-    scores // Include raw scores for debugging
+    engagedVotes: engagedCount,
+    notEngagedVotes: notEngagedCount,
+    engagedPercentage: Math.round(engagedPercentage * 100)
   };
 }
 
@@ -739,11 +693,11 @@ io.on('connection', (socket) => {
       // Add emotion to history buffer
       const dataPoints = addEmotionToHistory(studentId, normalizedEmotion, confidence || 0.5);
       
-      // Calculate engagement using weighted temporal analysis
+      // Calculate engagement using simple majority voting
       const result = calculateEngagementFromHistory(studentId);
-      const { engagement, confidence: avgConfidence, scores = { engaged: 0, bored: 0, confused: 0, notPaying: 0 } } = result;
+      const { engagement, confidence: avgConfidence } = result;
 
-      console.log(`🎭 ${studentName}: ${normalizedEmotion} (${((confidence || 0.5) * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, scores: E:${scores.engaged.toFixed(2)} B:${scores.bored.toFixed(2)} C:${scores.confused.toFixed(2)} N:${scores.notPaying.toFixed(2)}]`);
+      console.log(`🎭 ${studentName}: ${normalizedEmotion} (${((confidence || 0.5) * 100).toFixed(0)}%) → ${engagement} [${dataPoints} frames, ${result.engagedPercentage || 50}% engaged votes]`);
 
       // Update student's emotion in active sessions
       if (activeSessions.students.has(studentId)) {
