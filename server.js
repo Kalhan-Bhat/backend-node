@@ -36,7 +36,7 @@ const io = socketIO(server, {
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, Postman, etc.)
       if (!origin) return callback(null, true);
-      
+
       // Check if origin matches any allowed pattern
       const isAllowed = allowedOrigins.some(allowed => {
         if (typeof allowed === 'string') {
@@ -47,7 +47,7 @@ const io = socketIO(server, {
         }
         return false;
       });
-      
+
       if (isAllowed) {
         callback(null, true);
       } else {
@@ -63,7 +63,7 @@ const io = socketIO(server, {
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    
+
     const isAllowed = allowedOrigins.some(allowed => {
       if (typeof allowed === 'string') {
         return origin === allowed || origin === allowed + '/';
@@ -73,7 +73,7 @@ app.use(cors({
       }
       return false;
     });
-    
+
     if (isAllowed) {
       callback(null, true);
     } else {
@@ -98,7 +98,7 @@ app.use((req, res, next) => {
       }
       return false;
     });
-    
+
     if (isAllowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -106,11 +106,11 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
   }
-  
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
-  
+
   next();
 });
 
@@ -146,20 +146,8 @@ const analyticsData = new Map();
 // Topic tracking: channelName -> [{ topicName, startTime, endTime }]
 const topicTracking = new Map();
 
-// Emotion to Engagement State Mapping
-const emotionToEngagement = {
-  'happy': 'Engaged',
-  'neutral': 'Not Paying Attention',
-  'sad': 'Bored',
-  'angry': 'Confused',
-  'surprised': 'Engaged',
-  'fearful': 'Confused',
-  'disgusted': 'Bored'
-};
-
-function mapEmotionToEngagement(emotion) {
-  return emotionToEngagement[emotion] || 'Not Paying Attention';
-}
+// Note: Model now predicts engagement states directly
+// No mapping needed - model outputs: Engaged, Bored, Confused, Not Paying Attention
 
 // =====================================
 // REST API ENDPOINTS
@@ -179,14 +167,14 @@ app.get('/health', (req, res) => {
 app.get('/api/token', (req, res) => {
   try {
     const { channel, role = 'student' } = req.query;
-    
+
     if (!channel) {
       return res.status(400).json({ error: 'Channel name is required' });
     }
 
     // Generate unique UID for this user
     const uid = Math.floor(Math.random() * 100000);
-    
+
     // Set token expiration (1 hour)
     const rtcRole = RtcRole.PUBLISHER;
     const expireTime = 3600;
@@ -204,7 +192,7 @@ app.get('/api/token', (req, res) => {
     );
 
     console.log(`✅ Token generated for ${role} in channel: ${channel}`);
-    
+
     res.json({
       token,
       uid,
@@ -222,7 +210,7 @@ app.get('/api/token', (req, res) => {
  */
 app.get('/api/students/:channelName', (req, res) => {
   const { channelName } = req.params;
-  
+
   const studentsInChannel = Array.from(activeSessions.students.values())
     .filter(student => student.channelName === channelName)
     .map(student => ({
@@ -250,20 +238,20 @@ app.get('/api/analytics/:channelName', (req, res) => {
 app.post('/api/topics/:channelName', (req, res) => {
   const { channelName } = req.params;
   const { topicName } = req.body;
-  
+
   if (!topicTracking.has(channelName)) {
     topicTracking.set(channelName, []);
   }
-  
+
   const topic = {
     topicName,
     startTime: Date.now(),
     endTime: null
   };
-  
+
   topicTracking.get(channelName).push(topic);
   console.log(`📚 Topic started in ${channelName}: ${topicName}`);
-  
+
   res.json({ success: true, topic });
 });
 
@@ -273,7 +261,7 @@ app.post('/api/topics/:channelName', (req, res) => {
 app.put('/api/topics/:channelName/end', (req, res) => {
   const { channelName } = req.params;
   const topics = topicTracking.get(channelName);
-  
+
   if (topics && topics.length > 0) {
     const lastTopic = topics[topics.length - 1];
     if (!lastTopic.endTime) {
@@ -281,7 +269,7 @@ app.put('/api/topics/:channelName/end', (req, res) => {
       console.log(`📚 Topic ended in ${channelName}: ${lastTopic.topicName}`);
     }
   }
-  
+
   res.json({ success: true });
 });
 
@@ -301,7 +289,7 @@ app.get('/api/report/:channelName', (req, res) => {
   const { channelName } = req.params;
   const analytics = analyticsData.get(channelName) || [];
   const topics = topicTracking.get(channelName) || [];
-  
+
   // Get unique students
   const uniqueStudents = [...new Set(analytics.map(a => a.studentId))];
   const studentNames = {};
@@ -310,14 +298,14 @@ app.get('/api/report/:channelName', (req, res) => {
       studentNames[a.studentId] = a.studentName;
     }
   });
-  
+
   // Calculate engagement statistics per topic
   const topicStats = topics.map(topic => {
-    const topicAnalytics = analytics.filter(a => 
-      a.timestamp >= topic.startTime && 
+    const topicAnalytics = analytics.filter(a =>
+      a.timestamp >= topic.startTime &&
       (!topic.endTime || a.timestamp <= topic.endTime)
     );
-    
+
     // Overall engagement counts
     const engagementCounts = {
       'Engaged': 0,
@@ -325,35 +313,35 @@ app.get('/api/report/:channelName', (req, res) => {
       'Confused': 0,
       'Not Paying Attention': 0
     };
-    
+
     topicAnalytics.forEach(a => {
       if (engagementCounts.hasOwnProperty(a.engagement)) {
         engagementCounts[a.engagement]++;
       }
     });
-    
+
     // Per-student engagement percentages
     const studentStats = uniqueStudents.map(studentId => {
       const studentData = topicAnalytics.filter(a => a.studentId === studentId);
-      
+
       const studentEngagementCounts = {
         'Engaged': 0,
         'Bored': 0,
         'Confused': 0,
         'Not Paying Attention': 0
       };
-      
+
       studentData.forEach(a => {
         if (studentEngagementCounts.hasOwnProperty(a.engagement)) {
           studentEngagementCounts[a.engagement]++;
         }
       });
-      
+
       const totalDataPoints = studentData.length;
-      const engagementPercentage = totalDataPoints > 0 
-        ? (studentEngagementCounts['Engaged'] / totalDataPoints) * 100 
+      const engagementPercentage = totalDataPoints > 0
+        ? (studentEngagementCounts['Engaged'] / totalDataPoints) * 100
         : 0;
-      
+
       return {
         studentId,
         studentName: studentNames[studentId] || `Student ${studentId}`,
@@ -365,12 +353,12 @@ app.get('/api/report/:channelName', (req, res) => {
         notPayingAttentionPercentage: totalDataPoints > 0 ? Math.round((studentEngagementCounts['Not Paying Attention'] / totalDataPoints) * 1000) / 10 : 0
       };
     });
-    
+
     // Calculate class average engagement percentage
     const classAverageEngagement = studentStats.length > 0
       ? studentStats.reduce((sum, s) => sum + s.engagementPercentage, 0) / studentStats.length
       : 0;
-    
+
     return {
       topicName: topic.topicName,
       startTime: topic.startTime,
@@ -382,29 +370,29 @@ app.get('/api/report/:channelName', (req, res) => {
       classAverageEngagement: Math.round(classAverageEngagement * 10) / 10
     };
   });
-  
+
   // Overall class statistics
   const overallStats = uniqueStudents.map(studentId => {
     const studentData = analytics.filter(a => a.studentId === studentId);
-    
+
     const studentEngagementCounts = {
       'Engaged': 0,
       'Bored': 0,
       'Confused': 0,
       'Not Paying Attention': 0
     };
-    
+
     studentData.forEach(a => {
       if (studentEngagementCounts.hasOwnProperty(a.engagement)) {
         studentEngagementCounts[a.engagement]++;
       }
     });
-    
+
     const totalDataPoints = studentData.length;
-    const engagementPercentage = totalDataPoints > 0 
-      ? (studentEngagementCounts['Engaged'] / totalDataPoints) * 100 
+    const engagementPercentage = totalDataPoints > 0
+      ? (studentEngagementCounts['Engaged'] / totalDataPoints) * 100
       : 0;
-    
+
     return {
       studentId,
       studentName: studentNames[studentId] || `Student ${studentId}`,
@@ -412,12 +400,12 @@ app.get('/api/report/:channelName', (req, res) => {
       engagementPercentage: Math.round(engagementPercentage * 10) / 10
     };
   });
-  
+
   const overallClassAverage = overallStats.length > 0
     ? overallStats.reduce((sum, s) => sum + s.engagementPercentage, 0) / overallStats.length
     : 0;
-  
-  res.json({ 
+
+  res.json({
     channelName,
     topics: topicStats,
     overallStats,
@@ -444,9 +432,9 @@ io.on('connection', (socket) => {
    */
   socket.on('student:join', (data) => {
     const { studentId, channelName, studentName } = data;
-    
+
     const displayName = studentName || `Student ${studentId}`;
-    
+
     activeSessions.students.set(studentId, {
       id: studentId,
       name: displayName,
@@ -468,11 +456,11 @@ io.on('connection', (socket) => {
       studentName: displayName,
       timestamp: Date.now()
     });
-    
+
     // Send existing students list to the new student
     const existingStudents = Array.from(activeSessions.students.values())
       .filter(s => s.channelName === channelName && s.id !== studentId);
-    
+
     existingStudents.forEach(existingStudent => {
       socket.emit('student:joined', {
         studentId: existingStudent.id,
@@ -480,11 +468,11 @@ io.on('connection', (socket) => {
         timestamp: Date.now()
       });
     });
-    
+
     // Send existing teachers list to the new student
     const existingTeachers = Array.from(activeSessions.teachers.values())
       .filter(t => t.channelName === channelName);
-    
+
     existingTeachers.forEach(teacher => {
       socket.emit('teacher:joined', {
         teacherId: teacher.id,
@@ -499,9 +487,9 @@ io.on('connection', (socket) => {
    */
   socket.on('teacher:join', (data) => {
     const { teacherId, channelName, teacherName } = data;
-    
+
     const displayName = teacherName || `Teacher ${teacherId}`;
-    
+
     activeSessions.teachers.set(teacherId, {
       id: teacherId,
       name: displayName,
@@ -527,7 +515,7 @@ io.on('connection', (socket) => {
 
     console.log(`📋 Sending ${studentsInChannel.length} students to teacher:`, studentsInChannel.map(s => `${s.name} (${s.id})`).join(', '));
     socket.emit('students:list', { students: studentsInChannel });
-    
+
     // Also broadcast to all students in channel that teacher joined (so they can update names)
     studentsInChannel.forEach(student => {
       io.to(student.socketId).emit('teacher:joined', {
@@ -553,7 +541,7 @@ io.on('connection', (socket) => {
 
       // Forward frame to Python ML service
       console.log(`🔄 Forwarding frame to ML service at ${CONFIG.ML_SERVICE_URL}/predict...`);
-      
+
       const mlResponse = await axios.post(
         `${CONFIG.ML_SERVICE_URL}/predict`,
         { image: frame },
@@ -565,20 +553,18 @@ io.on('connection', (socket) => {
 
       console.log(`✅ ML service responded successfully`);
 
-      const { emotion, confidence } = mlResponse.data;
-      const engagement = mapEmotionToEngagement(emotion);
+      const { engagement, confidence } = mlResponse.data;
 
-      console.log(`🎭 Detected emotion for ${studentName}: ${emotion} → ${engagement} (${(confidence * 100).toFixed(1)}%)`);
+      console.log(`🎭 Detected engagement for ${studentName}: ${engagement} (${(confidence * 100).toFixed(1)}%)`);
 
-      // Update student's emotion in active sessions
+      // Update student's engagement in active sessions
       if (activeSessions.students.has(studentId)) {
         const existingStudent = activeSessions.students.get(studentId);
-        existingStudent.emotion = emotion;
         existingStudent.engagement = engagement;
         existingStudent.confidence = confidence;
         existingStudent.timestamp = Date.now();
       }
-      
+
       // Store analytics data
       if (!analyticsData.has(channelName)) {
         analyticsData.set(channelName, []);
@@ -587,14 +573,12 @@ io.on('connection', (socket) => {
         timestamp: Date.now(),
         studentId,
         studentName,
-        emotion,
         engagement,
         confidence
       });
 
       // Send engagement state back to student
-      socket.emit('emotion:result', {
-        emotion,
+      socket.emit('engagement:result', {
         engagement,
         confidence,
         timestamp: Date.now()
@@ -602,10 +586,9 @@ io.on('connection', (socket) => {
       console.log(`📤 Sent engagement result to ${studentName}`);
 
       // Broadcast engagement update to teachers in the same channel
-      io.to(`teachers:${channelName}`).emit('emotion:update', {
+      io.to(`teachers:${channelName}`).emit('engagement:update', {
         studentId,
         studentName,
-        emotion,
         engagement,
         confidence,
         timestamp: Date.now()
@@ -620,8 +603,8 @@ io.on('connection', (socket) => {
       if (error.response) {
         console.error('❌ ML service error response:', error.response.status, error.response.data);
       }
-      
-      socket.emit('emotion:error', {
+
+      socket.emit('engagement:error', {
         error: 'Failed to process frame',
         details: error.message
       });
@@ -633,14 +616,14 @@ io.on('connection', (socket) => {
    */
   socket.on('student:leave', (data) => {
     const { studentId, channelName } = data;
-    
+
     // Get student name before deleting
     const student = activeSessions.students.get(studentId);
     const studentName = student ? student.name : `Student ${studentId}`;
-    
+
     activeSessions.students.delete(studentId);
     socket.leave(`channel:${channelName}`);
-    
+
     console.log(`👨‍🎓 ${studentName} (ID: ${studentId}) left channel: ${channelName}`);
 
     // Notify teachers
@@ -655,15 +638,15 @@ io.on('connection', (socket) => {
    */
   socket.on('teacher:leave', (data) => {
     const { teacherId, channelName } = data;
-    
+
     // Get teacher name before deleting
     const teacher = activeSessions.teachers.get(teacherId);
     const teacherName = teacher ? teacher.name : `Teacher ${teacherId}`;
-    
+
     activeSessions.teachers.delete(teacherId);
     socket.leave(`channel:${channelName}`);
     socket.leave(`teachers:${channelName}`);
-    
+
     console.log(`👨‍🏫 ${teacherName} (ID: ${teacherId}) left channel: ${channelName}`);
   });
 
@@ -672,7 +655,7 @@ io.on('connection', (socket) => {
    */
   socket.on('disconnect', () => {
     console.log(`🔌 Disconnected: ${socket.id}`);
-    
+
     // Clean up from active sessions
     for (const [studentId, student] of activeSessions.students.entries()) {
       if (student.socketId === socket.id) {
