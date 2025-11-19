@@ -650,6 +650,24 @@ io.on('connection', (socket) => {
     console.log(`👨‍🏫 ${teacherName} (ID: ${teacherId}) left channel: ${channelName}`);
   });
 
+/**
+   * Whiteboard drawing - broadcast to all in channel
+   */
+  socket.on('whiteboard:draw', (data) => {
+    const { channelName } = data;
+    // Broadcast to everyone in the channel except sender
+    socket.to(`channel:${channelName}`).emit('whiteboard:draw', data);
+  });
+
+  /**
+   * Whiteboard clear - broadcast to all in channel
+   */
+  socket.on('whiteboard:clear', (data) => {
+    const { channelName } = data;
+    // Broadcast to everyone in the channel except sender
+    socket.to(`channel:${channelName}`).emit('whiteboard:clear', data);
+  });
+
   /**
    * Handle disconnection
    */
