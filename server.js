@@ -171,26 +171,30 @@ const topicTracking = new Map();
 // REST API ENDPOINTS
 // =====================================
 
-// Authentication routes (only if MongoDB is connected)
-if (CONFIG.MONGODB_URI) {
-  const authRoutes = require('./routes/auth');
-  app.use('/api/auth', authRoutes);
-  console.log('✅ Authentication routes enabled');
-} else {
-  // Stub auth endpoints that return error
-  app.post('/api/auth/signup', (req, res) => {
-    res.status(503).json({ 
-      message: 'Authentication is disabled. Please configure MONGODB_URI in environment variables.',
-      hint: 'You can still use demo access links on the landing page'
-    });
+// Stub authentication endpoints (database optional for now)
+app.post('/api/auth/signup', (req, res) => {
+  res.status(503).json({ 
+    message: 'Authentication is currently disabled. Please use demo access.',
+    hint: 'Click the demo links on the landing page to access the portal directly',
+    available: false
   });
-  app.post('/api/auth/login', (req, res) => {
-    res.status(503).json({ 
-      message: 'Authentication is disabled. Please configure MONGODB_URI in environment variables.',
-      hint: 'You can still use demo access links on the landing page'
-    });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  res.status(503).json({ 
+    message: 'Authentication is currently disabled. Please use demo access.',
+    hint: 'Click the demo links on the landing page to access the portal directly',
+    available: false
   });
-}
+});
+
+app.get('/api/auth/verify', (req, res) => {
+  res.status(503).json({ 
+    message: 'Authentication is currently disabled.',
+    valid: false,
+    available: false
+  });
+});
 
 /**
  * Health check endpoint
