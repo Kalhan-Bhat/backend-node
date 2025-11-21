@@ -9,8 +9,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 // JWT secret (should be in .env)
-const JWT_SECRET = process.env.JWT_SECRET || '16a3f75c426cb5a40d723f7ccef76aa70c1dbfd65951aa9e2b0ce0e5f9edc421e866f6fcd1f22ee0399183466cdea71320c60775bb377531cc7e84862e7678e2
-';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 /**
  * POST /api/auth/signup
