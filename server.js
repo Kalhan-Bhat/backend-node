@@ -164,6 +164,33 @@ const analyticsData = new Map();
 // Topic tracking: channelName -> [{ topicName, startTime, endTime }]
 const topicTracking = new Map();
 
+// Visitor tracking (will be persisted to MongoDB if available)
+let visitorCount = 1000; // Starting count
+
+// Load visitor count from MongoDB if available
+if (CONFIG.MONGODB_URI) {
+  mongoose.connection.once('open', async () => {
+    try {
+      const VisitorStats = mongoose.model('VisitorStats', new mongoose.Schema({
+        count: Number,
+        lastUpdated: Date
+      }), 'visitor_stats');
+      
+      const stats = await VisitorStats.findOne();
+      if (stats) {
+        visitorCount = stats.count;
+        console.log(`📊 Loaded visitor count from database: ${visitorCount}`);
+      } else {
+        // Initialize database with starting count
+        await new VisitorStats({ count: visitorCount, lastUpdated: new Date() }).save();
+        console.log(`📊 Initialized visitor count in database: ${visitorCount}`);
+      }
+    } catch (err) {
+      console.warn('⚠️  Could not load visitor stats from database:', err.message);
+    }
+  });
+}
+
 // Note: Model now predicts engagement states directly
 // No mapping needed - model outputs: Engaged, Bored, Confused, Not Paying Attention
 
@@ -232,6 +259,38 @@ if (CONFIG.MONGODB_URI) {
  */
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+/**
+ * Get and increment visitor count
+ */
+app.get('/api/visitors', async (req, res) => {
+  try {
+    // Increment visitor count
+    visitorCount++;
+    
+    // Update in database if MongoDB is available
+    if (CONFIG.MONGODB_URI && mongoose.connection.readyState === 1) {
+      try {
+        const VisitorStats = mongoose.model('VisitorStats');
+        await VisitorStats.findOneAndUpdate(
+          {},
+          { count: visitorCount, lastUpdated: new Date() },
+          { upsert: true }
+        );
+      } catch (err) {
+        console.warn('⚠️  Could not save visitor count to database:', err.message);
+      }
+    }
+    
+    res.json({ 
+      count: visitorCount,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error tracking visitors:', error);
+    res.json({ count: visitorCount, timestamp: new Date().toISOString() });
+  }
 });
 
 /**
