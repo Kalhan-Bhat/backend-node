@@ -124,16 +124,24 @@ const CONFIG = {
   AGORA_APP_CERTIFICATE: process.env.AGORA_APP_CERTIFICATE,
   PORT: parseInt(process.env.PORT, 10) || 3000, // Parse as integer with radix
   ML_SERVICE_URL: process.env.ML_SERVICE_URL || 'http://localhost:8000',
-  MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/student-engagement'
+  MONGODB_URI: process.env.MONGODB_URI
 };
 
-// Connect to MongoDB
-mongoose.connect(CONFIG.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('✅ MongoDB connected successfully'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+// Connect to MongoDB (optional - server will work without it)
+if (CONFIG.MONGODB_URI) {
+  mongoose.connect(CONFIG.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })
+  .then(() => console.log('✅ MongoDB connected successfully'))
+  .catch(err => {
+    console.warn('⚠️  MongoDB connection failed (authentication disabled):', err.message);
+    console.log('ℹ️  Server will continue without database. Add MONGODB_URI to enable authentication.');
+  });
+} else {
+  console.log('ℹ️  No MONGODB_URI provided - authentication endpoints disabled');
+  console.log('ℹ️  Add MONGODB_URI to .env to enable user authentication');
+}
 
 // Log startup configuration
 console.log('🔧 Starting with configuration:');
@@ -163,9 +171,26 @@ const topicTracking = new Map();
 // REST API ENDPOINTS
 // =====================================
 
-// Authentication routes
-const authRoutes = require('./routes/auth');
-app.use('/api/auth', authRoutes);
+// Authentication routes (only if MongoDB is connected)
+if (CONFIG.MONGODB_URI) {
+  const authRoutes = require('./routes/auth');
+  app.use('/api/auth', authRoutes);
+  console.log('✅ Authentication routes enabled');
+} else {
+  // Stub auth endpoints that return error
+  app.post('/api/auth/signup', (req, res) => {
+    res.status(503).json({ 
+      message: 'Authentication is disabled. Please configure MONGODB_URI in environment variables.',
+      hint: 'You can still use demo access links on the landing page'
+    });
+  });
+  app.post('/api/auth/login', (req, res) => {
+    res.status(503).json({ 
+      message: 'Authentication is disabled. Please configure MONGODB_URI in environment variables.',
+      hint: 'You can still use demo access links on the landing page'
+    });
+  });
+}
 
 /**
  * Health check endpoint
