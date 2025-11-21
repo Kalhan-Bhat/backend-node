@@ -6,10 +6,10 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { Student, Teacher } = require('../models/User');
 
 // JWT secret (should be in .env)
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 /**
  * POST /api/auth/signup
@@ -33,8 +33,11 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ message: 'Employee ID and department are required for teachers' });
     }
 
+    // Select correct model based on role
+    const Model = role === 'student' ? Student : Teacher;
+    
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await Model.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'User with this email already exists' });
     }
@@ -43,8 +46,7 @@ router.post('/signup', async (req, res) => {
     const userData = {
       name,
       email,
-      password,
-      role
+      password
     };
 
     if (role === 'student') {
@@ -55,12 +57,12 @@ router.post('/signup', async (req, res) => {
       userData.department = department;
     }
 
-    const user = new User(userData);
+    const user = new Model(userData);
     await user.save();
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user._id, email: user.email, role },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -91,8 +93,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Please provide email, password, and role' });
     }
 
-    // Find user by email and role
-    const user = await User.findOne({ email, role });
+    // Select correct model based on role
+    const Model = role === 'student' ? Student : Teacher;
+    
+    // Find user by email
+    const user = await Model.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: 'Invalid email, password, or role' });
     }
@@ -105,7 +110,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user._id, email: user.email, role },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -136,7 +141,8 @@ router.get('/verify', async (req, res) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.userId);
+    const Model = decoded.role === 'student' ? Student : Teacher;
+    const user = await Model.findById(decoded.userId);
 
     if (!user) {
       return res.status(401).json({ message: 'User not found' });

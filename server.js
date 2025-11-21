@@ -171,30 +171,61 @@ const topicTracking = new Map();
 // REST API ENDPOINTS
 // =====================================
 
-// Stub authentication endpoints (database optional for now)
-app.post('/api/auth/signup', (req, res) => {
-  res.status(503).json({ 
-    message: 'Authentication is currently disabled. Please use demo access.',
-    hint: 'Click the demo links on the landing page to access the portal directly',
-    available: false
+// Authentication routes (load when MongoDB is available)
+if (CONFIG.MONGODB_URI) {
+  try {
+    const authRoutes = require('./routes/auth');
+    app.use('/api/auth', authRoutes);
+    console.log('✅ Authentication routes loaded');
+  } catch (error) {
+    console.error('❌ Failed to load auth routes:', error.message);
+    // Fallback to stub endpoints
+    app.post('/api/auth/signup', (req, res) => {
+      res.status(503).json({ 
+        message: 'Authentication is temporarily unavailable.',
+        hint: 'Please use demo access',
+        available: false
+      });
+    });
+    app.post('/api/auth/login', (req, res) => {
+      res.status(503).json({ 
+        message: 'Authentication is temporarily unavailable.',
+        hint: 'Please use demo access',
+        available: false
+      });
+    });
+    app.get('/api/auth/verify', (req, res) => {
+      res.status(503).json({ 
+        message: 'Authentication is temporarily unavailable.',
+        valid: false,
+        available: false
+      });
+    });
+  }
+} else {
+  // Stub endpoints when no MongoDB
+  app.post('/api/auth/signup', (req, res) => {
+    res.status(503).json({ 
+      message: 'Authentication is currently disabled. Please use demo access.',
+      hint: 'Click the demo links on the landing page',
+      available: false
+    });
   });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  res.status(503).json({ 
-    message: 'Authentication is currently disabled. Please use demo access.',
-    hint: 'Click the demo links on the landing page to access the portal directly',
-    available: false
+  app.post('/api/auth/login', (req, res) => {
+    res.status(503).json({ 
+      message: 'Authentication is currently disabled. Please use demo access.',
+      hint: 'Click the demo links on the landing page',
+      available: false
+    });
   });
-});
-
-app.get('/api/auth/verify', (req, res) => {
-  res.status(503).json({ 
-    message: 'Authentication is currently disabled.',
-    valid: false,
-    available: false
+  app.get('/api/auth/verify', (req, res) => {
+    res.status(503).json({ 
+      message: 'Authentication is currently disabled.',
+      valid: false,
+      available: false
+    });
   });
-});
+}
 
 /**
  * Health check endpoint
