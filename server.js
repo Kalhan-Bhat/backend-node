@@ -650,7 +650,7 @@ io.on('connection', (socket) => {
     console.log(`👨‍🏫 ${teacherName} (ID: ${teacherId}) left channel: ${channelName}`);
   });
 
-/**
+  /**
    * Whiteboard drawing - broadcast to all in channel
    */
   socket.on('whiteboard:draw', (data) => {
@@ -666,6 +666,26 @@ io.on('connection', (socket) => {
     const { channelName } = data;
     // Broadcast to everyone in the channel except sender
     socket.to(`channel:${channelName}`).emit('whiteboard:clear', data);
+  });
+
+  /**
+   * Whiteboard new page - broadcast to all in channel
+   */
+  socket.on('whiteboard:newPage', (data) => {
+    const { channelName } = data;
+    console.log('📝 New whiteboard page created in channel:', channelName);
+    // Broadcast to everyone in the channel except sender
+    socket.to(`channel:${channelName}`).emit('whiteboard:newPage', data);
+  });
+
+  /**
+   * Whiteboard change page - broadcast to all in channel
+   */
+  socket.on('whiteboard:changePage', (data) => {
+    const { channelName, pageIndex } = data;
+    console.log(`📝 Whiteboard page changed to ${pageIndex} in channel:`, channelName);
+    // Broadcast to everyone in the channel except sender
+    socket.to(`channel:${channelName}`).emit('whiteboard:changePage', data);
   });
 
   /**
