@@ -17,6 +17,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
  */
 router.post('/signup', async (req, res) => {
   try {
+    console.log('📝 Signup request received:', { role: req.body.role, email: req.body.email });
+    
     const { name, email, password, role, rollNumber, course, employeeId, department } = req.body;
 
     // Validate required fields
@@ -35,10 +37,12 @@ router.post('/signup', async (req, res) => {
 
     // Select correct model based on role
     const Model = role === 'student' ? Student : Teacher;
+    console.log('📊 Using model:', Model.modelName, 'Collection:', Model.collection.name);
     
     // Check if user already exists
     const existingUser = await Model.findOne({ email });
     if (existingUser) {
+      console.log('⚠️  User already exists:', email);
       return res.status(400).json({ message: 'User with this email already exists' });
     }
 
@@ -57,8 +61,10 @@ router.post('/signup', async (req, res) => {
       userData.department = department;
     }
 
+    console.log('💾 Creating new user...');
     const user = new Model(userData);
-    await user.save();
+    const savedUser = await user.save();
+    console.log('✅ User saved to database:', savedUser._id);
 
     // Generate JWT token
     const token = jwt.sign(
@@ -67,7 +73,7 @@ router.post('/signup', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    console.log(`✅ New ${role} registered: ${name} (${email})`);
+    console.log(`✅ New ${role} registered: ${name} (${email}) - ID: ${savedUser._id}`);
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -76,6 +82,7 @@ router.post('/signup', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Signup error:', error);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({ message: 'Registration failed', error: error.message });
   }
 });
