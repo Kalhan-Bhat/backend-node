@@ -129,14 +129,29 @@ const CONFIG = {
 
 // Connect to MongoDB (optional - server will work without it)
 if (CONFIG.MONGODB_URI) {
-  mongoose.connect(CONFIG.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
+  mongoose.connect(CONFIG.MONGODB_URI)
+  .then(() => {
+    console.log('✅ MongoDB connected successfully');
+    console.log('📊 Database:', mongoose.connection.db.databaseName);
+    console.log('🔗 Collections available:', Object.keys(mongoose.connection.collections));
   })
-  .then(() => console.log('✅ MongoDB connected successfully'))
   .catch(err => {
-    console.warn('⚠️  MongoDB connection failed (authentication disabled):', err.message);
-    console.log('ℹ️  Server will continue without database. Add MONGODB_URI to enable authentication.');
+    console.error('❌ MongoDB connection failed:', err.message);
+    console.error('❌ Full error:', err);
+    console.log('ℹ️  Server will continue without database. Authentication features will be disabled.');
+  });
+  
+  // Monitor connection events
+  mongoose.connection.on('connected', () => {
+    console.log('🔗 MongoDB connection established');
+  });
+  
+  mongoose.connection.on('error', (err) => {
+    console.error('❌ MongoDB connection error:', err);
+  });
+  
+  mongoose.connection.on('disconnected', () => {
+    console.warn('⚠️  MongoDB disconnected');
   });
 } else {
   console.log('ℹ️  No MONGODB_URI provided - authentication endpoints disabled');
